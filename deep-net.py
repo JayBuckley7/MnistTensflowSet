@@ -1,12 +1,20 @@
-import tensorflow as tf
-from tensorflow.examples.tutorials.mnist import input_data
-import os
-mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+import tensorflow as tf;
+from tensorflow.examples.tutorials.mnist import input_data;
+import os;
+import cv2;
+import mss
+import mss.tools
+import numpy as np;
+import keras;
+
+mnist = input_data.read_data_sets("MNIST_data/", one_hot=True);
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2';
+SCALAR_RED = (0.0, 0.0, 255.0);
+SCALAR_BLUE = (255.0, 0.0, 0.0);
 
 
 '''
-    Class for creating and passing network propertys
+    Class for creating and passing network properties
     because you python programmers are mental
 '''
 class NetworkModel: #{
@@ -42,7 +50,8 @@ def main():#{
 
     cycles = 10;
 
-    Train(cycles, NetModel)
+    ##Train(cycles, NetModel);
+    Test(cycles, NetModel);
 
 #}
 
@@ -92,27 +101,6 @@ def GetNNModel(data, NetModel:NetworkModel):#{
     return output
 #}
 
-
-def neural(data):
-    hidden_1_layer={'weights':tf.Variable(tf.random_normal([784, 500])),
-    'biases':tf.Variable(tf.random_normal([500]))}
-    hidden_2_layer={'weights':tf.Variable(tf.random_normal([500, 500])),
-    'biases':tf.Variable(tf.random_normal([500]))}
-    hidden_3_layer={'weights':tf.Variable(tf.random_normal([500, 500])),
-    'biases':tf.Variable(tf.random_normal([500]))}
-    output_layer={'weights':tf.Variable(tf.random_normal([500, 10])),
-    'biases':tf.Variable(tf.random_normal([10]))}
-
-    l1=tf.add(tf.matmul(data, hidden_1_layer['weights']), hidden_1_layer['biases'])
-    li= tf.nn.relu(l1)
-    l2=tf.add(tf.matmul(l1, hidden_2_layer['weights']), hidden_2_layer['biases'])
-    l2= tf.nn.relu(l2)
-    l3=tf.add(tf.matmul(l2, hidden_3_layer['weights']), hidden_3_layer['biases'])
-    l3= tf.nn.relu(l3)
-    output= tf.matmul(l3, output_layer['weights'])+ output_layer['biases']
-    return output
-
-
 '''
 Does the thing
 '''
@@ -120,17 +108,31 @@ def Train(numEpochs, NetModel:NetworkModel):#{
     n = NetModel;
     x = tf.placeholder('float', [None, n.Shape[1]])
     y = tf.placeholder('float')
-
     pred= GetNNModel(x, n); #one_hot array
-
     cost= tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=pred,labels=y))
-
     optimizer = tf.train.AdamOptimizer().minimize(cost);
-
     with tf.compat.v1.Session() as sess:
     #{
         sess.run(tf.initialize_all_variables());
+        saver = tf.train.Saver();
+        tf_log = 'tf.log'
+        accuracy = "";
+        print("attempting to load first model from storage");
         for epoch in range(numEpochs): #{
+
+            try:#{
+                saver.restore(sess,"Model/model.ckpt");
+                correct = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1));
+                accuracy = tf.reduce_mean(tf.cast(correct, 'float'));
+                print("restoring model with ", accuracy.eval({x: mnist.test.images, y: mnist.test.labels}) * 100,
+                      "% accuracy");
+                # }
+            except Exception as e:#{
+                print(str(e));
+                print("failed to load  a model from storage... are you sure you had one?");
+                # }
+
+
             epoch_cost = 0;
             for _ in range(int(mnist.train.num_examples/n.BatchSize)):
             #{
@@ -139,15 +141,93 @@ def Train(numEpochs, NetModel:NetworkModel):#{
                 epoch_cost += c;
                 print("epoch ", epoch ," / ", numEpochs, " loss: ",epoch_cost)
             #}
+
+
             correct = tf.equal(tf.argmax(pred, 1),tf.argmax(y,1));
             accuracy = tf.reduce_mean(tf.cast(correct, 'float'));
             print('Accuracy: ',accuracy.eval({x:mnist.test.images, y:mnist.test.labels}));
-        #}
+            saver.save(sess, "Model/model.ckpt");
+            print("saving model with ",accuracy.eval({x:mnist.test.images, y:mnist.test.labels})*100,"% accuracy")
     #}
 #}
 
 
 
+'''
+Does the thing
+'''
+def Test(numEpochs, NetModel:NetworkModel):#{
+    #####################
+    n = NetModel;
+    x = tf.placeholder('float', [None, n.Shape[1]])
+    y = tf.placeholder('float')
+    pred= GetNNModel(x, n); #one_hot array
+    cost= tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=pred,labels=y))
+    optimizer = tf.train.AdamOptimizer().minimize(cost);
+    #######################
+
+    with tf.compat.v1.Session() as sess:
+    #{
+        print("restoring model");
+        saver = tf.train.Saver();
+        saver.restore(sess, "Model/model.ckpt");
+        for fileName in os.listdir("test_images"):
+            print(fileName);
+            img = cv2.imread("test_images/"+fileName);
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY);
+            gray = cv2.resize(gray, (28, 28));
+            gray = gray.astype('float32')
+            gray = gray.reshape(1, 784)
+            gray /= 255;  ##idk yet
+
+            epic_x = gray;
+            epic_y = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+
+            result = sess.run([optimizer, cost], feed_dict={x: epic_x, y: epic_y});
+            correct = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1));
+
+            tfmax = tf.argmax(pred, 1)
+            print("tfMax: ", tfmax);
+            prediction = str((tfmax.eval(feed_dict={x: gray})))
+
+            big = cv2.resize(img, (100, 100));
+            writeResultOnImage(big, "" + str(prediction))
+            print("predicted: "+prediction)
+            cv2.imshow("predicted", big)
+            cv2.waitKey(0);
+
+#}
+#######################################################################################################################
+def writeResultOnImage(openCVImage, resultText):
+    # ToDo: this function may take some further fine-tuning to show the text well given any possible image size
+
+    imageHeight, imageWidth, sceneNumChannels = openCVImage.shape
+    imageHeight=imageHeight
+    imageWidth=imageWidth
+
+    # choose a font
+    fontFace = cv2.FONT_HERSHEY_TRIPLEX
+
+    # chose the font size and thickness as a fraction of the image size
+    fontScale = 1.0
+    fontThickness = 2
+
+    # make sure font thickness is an integer, if not, the OpenCV functions that use this may crash
+    fontThickness = int(fontThickness)
+
+    upperLeftTextOriginX = int(imageWidth * 0.05)
+    upperLeftTextOriginY = int(imageHeight * 0.05)
+
+    textSize, baseline = cv2.getTextSize(resultText, fontFace, fontScale, fontThickness)
+    textSizeWidth, textSizeHeight = textSize
+
+    # calculate the lower left origin of the text area based on the text area center, width, and height
+    lowerLeftTextOriginX = upperLeftTextOriginX
+    lowerLeftTextOriginY = upperLeftTextOriginY + textSizeHeight
+
+    # write the text on the image
+    cv2.putText(openCVImage, resultText, (lowerLeftTextOriginX, lowerLeftTextOriginY), fontFace, fontScale, SCALAR_BLUE, fontThickness)
+# end function
 
 
 
